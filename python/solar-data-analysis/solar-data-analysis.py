@@ -38,15 +38,22 @@ def _():
 
     metadata = pl.read_csv(PV_DATA_PATH / "metadata.csv")
     metadata
-    return PV_DATA_PATH, pl
+    return PV_DATA_PATH, metadata, pl
+
+
+@app.cell
+def _(PV_DATA_PATH, pl):
+    new_metadata = pl.read_csv(PV_DATA_PATH / "new_metadata.csv", infer_schema_length=None)
+    new_metadata
+    return
 
 
 @app.cell
 def _(PV_DATA_PATH, pl):
     df_30_minutely = (
-        pl.scan_parquet(PV_DATA_PATH / "data" / "2018" / "2018_30min.parquet")
-        .select(["ss_id", "datetime_GMT", "generation_Wh"])
-        .cast({"ss_id": pl.Int32, "generation_Wh": pl.Float32})
+        pl.scan_parquet(PV_DATA_PATH / "data" / "2025" / "02" / "202502_30min.parquet")
+        # .select(["ss_id", "datetime_GMT", "generation_Wh"])
+        # .cast({"ss_id": pl.Int32, "generation_Wh": pl.Float32})
     )
 
     df_30_minutely.head().collect()
@@ -68,6 +75,23 @@ def _(PV_DATA_PATH, pl):
 @app.cell
 def _(df_30_minutely):
     df_30_minutely.select("ss_id").unique().count().collect()
+    return
+
+
+@app.cell
+def _(df_30_minutely, metadata):
+    missing = set(df_30_minutely.select("ss_id").unique().collect()["ss_id"]) - set(
+        metadata.select("ss_id").unique()["ss_id"]
+    )
+    missing = list(missing)
+    missing.sort()
+    missing
+    return
+
+
+@app.cell
+def _(metadata, pl):
+    metadata.filter(pl.col("ss_id") == 27068)
     return
 
 
@@ -96,7 +120,12 @@ def _(df_30_minutely, df_5_minutely):
 @app.cell
 def _(df_30_minutely, pl):
     def pivot_chunked(
-        df: pl.LazyFrame, n_rows_per_chunk: int, on: str, values: str, index: str, **kwargs
+        df: pl.LazyFrame,
+        on: str,
+        values: str,
+        index: str,
+        n_rows_per_chunk: int = 10_000_000,
+        **kwargs,
     ) -> pl.DataFrame:
         pivoted_chunks = []
         offset = 0
@@ -109,7 +138,6 @@ def _(df_30_minutely, pl):
 
     pivoted_30_minutely = pivot_chunked(
         df_30_minutely,
-        n_rows_per_chunk=10_000_000,
         on="ss_id",
         values="generation_Wh",
         index="datetime_GMT",
@@ -119,10 +147,15 @@ def _(df_30_minutely, pl):
 
 
 @app.cell
+def _():
+    # pivoted_30_minutely.write_parquet("pv_30_minutely_2018_64bit.parquet")
+    return
+
+
+@app.cell
 def _(df_5_minutely, pivot_chunked):
     pivoted_5_minutely = pivot_chunked(
         df_5_minutely,
-        n_rows_per_chunk=10_000_000,
         on="ss_id",
         values="generation_Wh",
         index="datetime_GMT",
@@ -196,12 +229,6 @@ def _(alt, datetime, pivoted_30_minutely, pivoted_5_minutely, pl):
         )
         .interactive()
     )
-    return
-
-
-@app.cell
-def _(Date):
-    Date
     return
 
 
