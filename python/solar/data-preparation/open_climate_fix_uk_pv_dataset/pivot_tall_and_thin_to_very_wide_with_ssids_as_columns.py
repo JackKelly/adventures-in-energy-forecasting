@@ -18,6 +18,8 @@ def _(mo):
         r"""
         Pivot the monthly "tall and long" Parquet data to a single "very wide" tables, where each SS_ID is a column.
 
+        This code takes about 12 minutes to run on an 8-core machine.
+
         Data sources:
 
         - Solar PV power data: https://huggingface.co/datasets/openclimatefix/uk_pv/tree/main
@@ -30,93 +32,70 @@ def _(mo):
 def _():
     import polars as pl
     import pathlib
+    import glob
 
     PV_DATA_PATH = pathlib.Path("~/data/uk_pv/").expanduser()
-    return PV_DATA_PATH, pl
+    SRC_FILENAMES = list(PV_DATA_PATH.glob("data/*/*/*_30min.parquet"))
+    SRC_FILENAMES.sort()
+    SRC_FILENAMES
+    return PV_DATA_PATH, SRC_FILENAMES, pl
 
 
 @app.cell
 def _(PV_DATA_PATH, pl):
-    df = (
-        pl.scan_parquet(PV_DATA_PATH / "data" / "*" / "*" / "*_30min.parquet")
-        .select(["ss_id", "datetime_GMT", "generation_Wh"])
-        .cast({"ss_id": pl.Int32, "generation_Wh": pl.Float32})
-    )
+    metadata = pl.read_csv(PV_DATA_PATH / "metadata.csv")
+    metadata.head()
+    return (metadata,)
 
-    df.head().collect()
+
+@app.cell
+def _(SRC_FILENAMES, pl):
+    """Polars pivot only works in eager mode. And Polars tries to use more RAM than is available
+    when trying to pivot more than a few months of data.
+    So we need to pivot chunk-by-chunk. Which is what this function implements!
+    """
+
+    for filename in SRC_FILENAMES:
+        print(f"\rPivoting {filename}   ", end="")
+        month_df = (
+            pl.scan_parquet(filename)
+            .select(["ss_id", "datetime_GMT", "generation_Wh"])
+            .cast({"ss_id": pl.Int32, "generation_Wh": pl.Float32})
+            .collect()
+            .pivot(
+                on="ss_id",
+                values="generation_Wh",
+                index="datetime_GMT",
+                sort_columns=True,
+            )
+            .sort(by="datetime_GMT")
+            .write_parquet(filename.with_suffix(".pivoted.parquet"))
+        )
+    return
+
+
+@app.cell
+def _(PV_DATA_PATH, metadata, pl):
+    schema = {"datetime_GMT": pl.Datetime("ns", "UTC")}
+    schema.update({f"{ss_id}": pl.Float32 for ss_id in metadata["ss_id"]})
+
+    df = pl.scan_parquet(
+        PV_DATA_PATH / "data" / "*" / "*" / "*_30min.pivoted.parquet",
+        schema=schema,
+        allow_missing_columns=True,
+    )
     return (df,)
 
 
 @app.cell
-def _(df, pl):
-    def pivot_chunked(
-        df: pl.LazyFrame,
-        on: str,
-        values: str,
-        index: str,
-        n_rows_per_chunk: int = 10_000_000,
-        **kwargs,
-    ) -> pl.DataFrame:
-        """Polars pivot only works in eager mode. And Polars tries to use more RAM than is available
-        when trying to pivot more than a few months of data.
-        So we need to pivot chunk-by-chunk. Which is what this function implements!
-        """
-        pivoted_chunks = []
-        offset = 0
-        while (chunk := df.slice(offset, n_rows_per_chunk).collect()).height > 0:
-            try:
-                pivoted_chunk = chunk.pivot(on=on, values=values, index=index, **kwargs)
-            except:
-                print(f"The chunk starting at offset = {offset} failed to pivot!")
-                raise
-            pivoted_chunks.append(pivoted_chunk)
-            offset += n_rows_per_chunk
-        return pl.concat(pivoted_chunks, how="diagonal").sort(by=index)
-
-
-    wide_df = pivot_chunked(
-        df,
-        on="ss_id",
-        values="generation_Wh",
-        index="datetime_GMT",
-        sort_columns=True,
-    )
-    return (wide_df,)
-
-
-@app.cell
 def _(df):
-    offset = 3_840_000_000 + 30_000_000
-    chunk = df.slice(offset, 2_000_000)
-    pivoted = chunk.collect().pivot(
-        "ss_id", values="generation_Wh", index="datetime_GMT", aggregate_function="len"
-    )
-    return (pivoted,)
-
-
-@app.cell
-def _(pivoted):
-    pivoted
+    df.tail().collect()
     return
 
 
 @app.cell
-def _(PV_DATA_PATH, datetime, pl):
-    december = pl.scan_parquet(PV_DATA_PATH / "data" / "2024" / "12" / "202412_30min.hh_as_columns.pq")
-    (
-        december.filter(
-            pl.col("ss_id") == 191789,
-            pl.col("datetime_GMT").dt.date() == datetime(2024, 12, 13).date(),
-        )
-        .head()
-        .collect()
-    )
-    return
-
-
-@app.cell
-def _(PV_DATA_PATH, wide_df):
-    wide_df.write_parquet(PV_DATA_PATH / "data" / "wide_30min.parquet")
+def _(PV_DATA_PATH, df):
+    df.sink_parquet(PV_DATA_PATH / "data" / "wide_30min.parquet")
     return
 
 
