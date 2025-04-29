@@ -2,13 +2,8 @@
 
 import marimo
 
-__generated_with = "0.13.0"
+__generated_with = "0.13.2"
 app = marimo.App(width="medium")
-
-
-@app.cell
-def _():
-    return
 
 
 @app.cell
@@ -17,13 +12,19 @@ def _():
     return (mo,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md(
         r"""
         Data sources:
 
-        - Solar PV power data: https://huggingface.co/datasets/openclimatefix/uk_pv/tree/main
+        Solar PV power data: https://huggingface.co/datasets/openclimatefix/uk_pv
+
+        To download new metadata from Sheffield Solar, run: 
+
+        ```bash
+        curl "https://api.pvlive.uk/rawdata/api/v4/owner_system_params_rounded?key=<API_KEY>&user_id=<USER_ID>" > new_metadata.csv
+        ```
         """
     )
     return
@@ -40,10 +41,12 @@ def _():
 
 @app.cell
 def _(PV_DATA_PATH, pl):
+    """Lazily open all the Parquet files in the data directory."""
+
     df = (
         pl.scan_parquet(PV_DATA_PATH / "data" / "*" / "*" / "*.parquet")
-        .select(["ss_id", "datetime_GMT", "generation_Wh"])
-        .cast({"ss_id": pl.Int32, "generation_Wh": pl.Float32})
+        .select(["ss_id", "datetime_GMT"])
+        .cast({"ss_id": pl.Int32})
     )
 
     df.head().collect()
@@ -52,7 +55,13 @@ def _(PV_DATA_PATH, pl):
 
 @app.cell
 def _(df):
-    # Get unique SS IDs from the Parquet data
+    df.tail().collect()
+    return
+
+
+@app.cell
+def _(df):
+    """Get unique Sheffield Solar IDs from the Parquet data."""
 
     ss_ids = set([])
     N_ROWS_PER_CHUNK = 10_000_000
@@ -86,6 +95,8 @@ def _(new_metadata, ss_ids):
 
 @app.cell
 def _(new_metadata, pl, ss_ids):
+    """Filter the new metadata to only include the SS IDs that are also in the Parquet data."""
+
     filtered = (
         new_metadata.filter(pl.col("ss_id").is_in(ss_ids))
         .drop(["owner_id", "owner_name", "system_id"])
@@ -108,7 +119,7 @@ def _(new_metadata, pl, ss_ids):
 
 @app.cell
 def _():
-    # filtered.write_csv("~/data/uk_pv/metadata.csv")
+    # filtered.write_csv(PV_DATA_PATH / "metadata.csv")
     return
 
 

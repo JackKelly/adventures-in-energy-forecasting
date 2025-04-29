@@ -1,7 +1,7 @@
 [project]
-name = "solar-data-analysis"
+name = "open_climate_fix_uk_pv_dataset"
 version = "0.1.0"
-description = "Add your description here"
+description = ""
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
