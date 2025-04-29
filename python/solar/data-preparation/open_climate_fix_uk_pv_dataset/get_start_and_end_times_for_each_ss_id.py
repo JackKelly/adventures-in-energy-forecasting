@@ -16,9 +16,10 @@ def _():
 def _():
     import polars as pl
     import pathlib
+    import itertools
 
     PV_DATA_PATH = pathlib.Path("~/data/uk_pv/").expanduser()
-    return PV_DATA_PATH, pl
+    return PV_DATA_PATH, itertools, pl
 
 
 @app.cell
@@ -41,39 +42,27 @@ def _(PV_DATA_PATH, pl, ss_ids):
 
 
 @app.cell
-def _(df):
-    all_datetimes = df.select("datetime_GMT").collect()
-    all_datetimes
-    return (all_datetimes,)
-
-
-@app.cell
-def _(all_datetimes, df, pl, ss_ids):
+def _(df, itertools, ss_ids):
     start_and_end_dates = []
+    _BATCH_SIZE = 256
 
-    for i, ss_id in enumerate(ss_ids[:30]):
-        print(f"\rProcessing {i:5,d} of {len(ss_ids):,d}: SS_ID {ss_id:6,d}", end="")
-        power = df.select(f"{ss_id}").collect()
-        dt_and_power = pl.concat((all_datetimes, power), how="horizontal").drop_nans(f"{ss_id}")
-        datetimes = dt_and_power["datetime_GMT"]
-        # .drop_nans(f"{ss_id}")
-        #    .select("datetime_GMT")
-        # .collect()["datetime_GMT"]
-        # )
-        start_and_end_dates.append(
-            {
-                "ss_id": ss_id,
-                "start_datetime_GMT": datetimes.first(),
-                "end_datetime_GMT": datetimes.last(),
-            }
+    for i, ss_id_batch in enumerate(itertools.batched(ss_ids, _BATCH_SIZE)):
+        print(
+            f"\rProcessing batch of SS_IDs from number {i * _BATCH_SIZE:5,d} to {(i + 1) * _BATCH_SIZE:5,d}. Total SS_IDs = {len(ss_ids):,d}",
+            end="",
         )
+        cols = ["datetime_GMT"] + list(map(str, ss_id_batch))
+        batch_df = df.select(cols).collect()
+        for ss_id in ss_id_batch:
+            datetimes = batch_df.drop_nans(f"{ss_id}")["datetime_GMT"]
+            start_and_end_dates.append(
+                {
+                    "ss_id": ss_id,
+                    "start_datetime_GMT": datetimes.first(),
+                    "end_datetime_GMT": datetimes.last(),
+                }
+            )
     return (start_and_end_dates,)
-
-
-@app.cell
-def _(start_and_end_dates):
-    start_and_end_dates
-    return
 
 
 @app.cell
@@ -81,11 +70,6 @@ def _(PV_DATA_PATH, metadata, pl, start_and_end_dates):
     pl.from_dicts(start_and_end_dates).join(metadata, on="ss_id").write_csv(
         PV_DATA_PATH / "metadata_with_dates.csv", datetime_format="%Y-%m-%dT%H:%M:%SZ"
     )
-    return
-
-
-@app.cell
-def _():
     return
 
 
