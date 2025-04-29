@@ -32,7 +32,6 @@ def _(mo):
 def _():
     import polars as pl
     import pathlib
-    import glob
 
     PV_DATA_PATH = pathlib.Path("~/data/uk_pv/").expanduser()
     SRC_FILENAMES = list(PV_DATA_PATH.glob("data/*/*/*_30min.parquet"))

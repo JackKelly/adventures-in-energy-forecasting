@@ -44,7 +44,7 @@ def _(PV_DATA_PATH, pl):
     """Lazily open all the Parquet files in the data directory."""
 
     df = (
-        pl.scan_parquet(PV_DATA_PATH / "data" / "*" / "*" / "*.parquet")
+        pl.scan_parquet(PV_DATA_PATH / "data" / "*" / "*" / "*30min_sorted.parquet")
         .select(["ss_id", "datetime_GMT"])
         .cast({"ss_id": pl.Int32})
     )
@@ -60,17 +60,17 @@ def _(df):
 
 
 @app.cell
-def _(df):
+def _(N_ROWS_PER_CHUNK, df):
     """Get unique Sheffield Solar IDs from the Parquet data."""
 
     ss_ids = set([])
-    N_ROWS_PER_CHUNK = 10_000_000
-    offset = 0
+    _N_ROWS_PER_CHUNK = 32_000_000
+    _offset = 0
     while (
-        ss_ids_for_chunk := df.select("ss_id").slice(offset, N_ROWS_PER_CHUNK).unique().collect()
+        _ss_ids_for_chunk := df.select("ss_id").slice(_offset, _N_ROWS_PER_CHUNK).unique().collect()
     ).height > 0:
-        ss_ids.update(ss_ids_for_chunk["ss_id"].to_list())
-        offset += N_ROWS_PER_CHUNK
+        ss_ids.update(_ss_ids_for_chunk["ss_id"].to_list())
+        _offset += N_ROWS_PER_CHUNK
     return (ss_ids,)
 
 
