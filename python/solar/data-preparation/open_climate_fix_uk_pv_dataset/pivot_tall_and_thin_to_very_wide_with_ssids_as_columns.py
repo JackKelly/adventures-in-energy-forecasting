@@ -12,11 +12,11 @@ def _():
     return (mo,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md(
         r"""
-        Pivot the "tall and long" Parquet data to "wide" tables, where each SS_ID is a column.
+        Pivot the monthly "tall and long" Parquet data to a single "very wide" tables, where each SS_ID is a column.
 
         Data sources:
 
@@ -44,56 +44,11 @@ def _(PV_DATA_PATH, pl):
     )
 
     df.head().collect()
-    return
+    return (df,)
 
 
 @app.cell
-def _(df_30_minutely):
-    df_30_minutely.select("ss_id").unique().count().collect()
-    return
-
-
-@app.cell
-def _(df_30_minutely, metadata):
-    missing = set(df_30_minutely.select("ss_id").unique().collect()["ss_id"]) - set(
-        metadata.select("ss_id").unique()["ss_id"]
-    )
-    missing = list(missing)
-    missing.sort()
-    missing
-    return
-
-
-@app.cell
-def _(metadata, pl):
-    metadata.filter(pl.col("ss_id") == 27068)
-    return
-
-
-@app.cell
-def _(df_5_minutely):
-    df_5_minutely.select("ss_id").unique().count().collect()
-    return
-
-
-@app.cell
-def _(df_5_minutely):
-    df_5_minutely.select("ss_id").unique().collect()["ss_id"]
-    return
-
-
-@app.cell
-def _(df_30_minutely, df_5_minutely):
-    intersection_ss_ids = set(df_5_minutely.select("ss_id").unique().collect()["ss_id"]).intersection(
-        df_30_minutely.select("ss_id").unique().collect()["ss_id"]
-    )
-
-    len(intersection_ss_ids)
-    return
-
-
-@app.cell
-def _(df_30_minutely, pl):
+def _(df, pl):
     def pivot_chunked(
         df: pl.LazyFrame,
         on: str,
@@ -102,41 +57,67 @@ def _(df_30_minutely, pl):
         n_rows_per_chunk: int = 10_000_000,
         **kwargs,
     ) -> pl.DataFrame:
+        """Polars pivot only works in eager mode. And Polars tries to use more RAM than is available
+        when trying to pivot more than a few months of data.
+        So we need to pivot chunk-by-chunk. Which is what this function implements!
+        """
         pivoted_chunks = []
         offset = 0
         while (chunk := df.slice(offset, n_rows_per_chunk).collect()).height > 0:
-            pivoted_chunk = chunk.pivot(on=on, values=values, index=index, **kwargs)
+            try:
+                pivoted_chunk = chunk.pivot(on=on, values=values, index=index, **kwargs)
+            except:
+                print(f"The chunk starting at offset = {offset} failed to pivot!")
+                raise
             pivoted_chunks.append(pivoted_chunk)
             offset += n_rows_per_chunk
         return pl.concat(pivoted_chunks, how="diagonal").sort(by=index)
 
 
-    pivoted_30_minutely = pivot_chunked(
-        df_30_minutely,
+    wide_df = pivot_chunked(
+        df,
         on="ss_id",
         values="generation_Wh",
         index="datetime_GMT",
         sort_columns=True,
     )
-    return pivot_chunked, pivoted_30_minutely
+    return (wide_df,)
 
 
 @app.cell
-def _():
-    # pivoted_30_minutely.write_parquet("pv_30_minutely_2018_64bit.parquet")
+def _(df):
+    offset = 3_840_000_000 + 30_000_000
+    chunk = df.slice(offset, 2_000_000)
+    pivoted = chunk.collect().pivot(
+        "ss_id", values="generation_Wh", index="datetime_GMT", aggregate_function="len"
+    )
+    return (pivoted,)
+
+
+@app.cell
+def _(pivoted):
+    pivoted
     return
 
 
 @app.cell
-def _(df_5_minutely, pivot_chunked):
-    pivoted_5_minutely = pivot_chunked(
-        df_5_minutely,
-        on="ss_id",
-        values="generation_Wh",
-        index="datetime_GMT",
-        sort_columns=True,
+def _(PV_DATA_PATH, datetime, pl):
+    december = pl.scan_parquet(PV_DATA_PATH / "data" / "2024" / "12" / "202412_30min.hh_as_columns.pq")
+    (
+        december.filter(
+            pl.col("ss_id") == 191789,
+            pl.col("datetime_GMT").dt.date() == datetime(2024, 12, 13).date(),
+        )
+        .head()
+        .collect()
     )
-    return (pivoted_5_minutely,)
+    return
+
+
+@app.cell
+def _(PV_DATA_PATH, wide_df):
+    wide_df.write_parquet(PV_DATA_PATH / "data" / "wide_30min.parquet")
+    return
 
 
 @app.cell
@@ -147,7 +128,7 @@ def _():
 
 
 @app.cell
-def _(alt, datetime, pivoted_30_minutely, pivoted_5_minutely, pl):
+def _(alt, datetime, pl, wide_df):
     SS_ID = "10149"  # 10086 is particularly interesting
 
     DATE = datetime(2018, 4, 3).date()
@@ -160,16 +141,16 @@ def _(alt, datetime, pivoted_30_minutely, pivoted_5_minutely, pl):
     data = (
         pl.concat(
             [
-                pivoted_5_minutely.lazy().select(
+                wide_df.lazy().select(
                     "datetime_GMT",
                     pl.col(SS_ID).mul(12).alias("5 minutely from SS"),
                 ),
-                pivoted_5_minutely.lazy()
+                wide_df.lazy()
                 .select("datetime_GMT", pl.col(SS_ID).mul(12))
                 .group_by_dynamic("datetime_GMT", every="30m", closed="right", label="right")
                 .agg(pl.mean(SS_ID))
                 .rename({SS_ID: "5 min aggregated by Jack to 30 min"}),
-                pivoted_30_minutely.lazy().select(
+                wide_df.lazy().select(
                     "datetime_GMT",
                     pl.col(SS_ID).mul(2).alias("30 minutely from SS"),
                 ),

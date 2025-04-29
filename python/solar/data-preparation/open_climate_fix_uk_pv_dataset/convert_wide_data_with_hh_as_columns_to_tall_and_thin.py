@@ -12,7 +12,7 @@ def _():
     return (mo,)
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md(
         r"""
@@ -49,8 +49,6 @@ def _(PV_DATA_PATH, cs, pl):
         dst_filename = src_filename.with_name(src_filename.name.replace(".parquet", ".tall.parquet"))
         (
             pl.scan_parquet(src_filename)
-            .cast({"ss_id": pl.Int32})
-            .cast({f"t{hh}": pl.Float32 for hh in range(1, 49)})
             .unpivot(
                 on=cs.starts_with("t"),
                 index=["datetime_GMT", "ss_id"],
@@ -60,6 +58,10 @@ def _(PV_DATA_PATH, cs, pl):
             .with_columns(pl.col("hh").str.replace("t", "").cast(pl.Int32).mul(30))
             .with_columns(pl.col("datetime_GMT").dt.offset_by(pl.format("{}m", pl.col("hh"))))
             .drop("hh")
+            # The wide data from SS contains some duplicates. Delete those dupes:
+            .unique(subset=["datetime_GMT", "ss_id"])
+            # Sort and save:
+            .sort(["datetime_GMT", "ss_id"])
             .sink_parquet(dst_filename)
         )
 
@@ -70,6 +72,12 @@ def _(PV_DATA_PATH, cs, pl):
         dst_filename.rename(
             dst_filename.with_name(dst_filename.name.replace(".tall.parquet", ".parquet"))
         )
+    return (SRC_FILENAMES,)
+
+
+@app.cell
+def _(SRC_FILENAMES, pl):
+    pl.scan_parquet(SRC_FILENAMES[0]).head().collect()
     return
 
 
