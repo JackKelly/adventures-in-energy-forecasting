@@ -2,13 +2,8 @@
 
 import marimo
 
-__generated_with = "0.13.0"
+__generated_with = "0.13.2"
 app = marimo.App(width="medium")
-
-
-@app.cell
-def _():
-    return
 
 
 @app.cell
@@ -21,6 +16,8 @@ def _():
 def _(mo):
     mo.md(
         r"""
+        Pivot the "tall and long" Parquet data to "wide" tables, where each SS_ID is a column.
+
         Data sources:
 
         - Solar PV power data: https://huggingface.co/datasets/openclimatefix/uk_pv/tree/main
@@ -34,42 +31,20 @@ def _():
     import polars as pl
     import pathlib
 
-    PV_DATA_PATH = pathlib.Path("~/data/uk_pv/")
-
-    metadata = pl.read_csv(PV_DATA_PATH / "metadata.csv")
-    metadata
-    return PV_DATA_PATH, metadata, pl
+    PV_DATA_PATH = pathlib.Path("~/data/uk_pv/").expanduser()
+    return PV_DATA_PATH, pl
 
 
 @app.cell
 def _(PV_DATA_PATH, pl):
-    new_metadata = pl.read_csv(PV_DATA_PATH / "new_metadata.csv", infer_schema_length=None)
-    new_metadata
-    return
-
-
-@app.cell
-def _(PV_DATA_PATH, pl):
-    df_30_minutely = (
-        pl.scan_parquet(PV_DATA_PATH / "data" / "2025" / "02" / "202502_30min.parquet")
-        # .select(["ss_id", "datetime_GMT", "generation_Wh"])
-        # .cast({"ss_id": pl.Int32, "generation_Wh": pl.Float32})
-    )
-
-    df_30_minutely.head().collect()
-    return (df_30_minutely,)
-
-
-@app.cell
-def _(PV_DATA_PATH, pl):
-    df_5_minutely = (
-        pl.scan_parquet(PV_DATA_PATH / "data" / "2018" / "2018_5min.parquet")
+    df = (
+        pl.scan_parquet(PV_DATA_PATH / "data" / "*" / "*" / "*_30min.parquet")
         .select(["ss_id", "datetime_GMT", "generation_Wh"])
         .cast({"ss_id": pl.Int32, "generation_Wh": pl.Float32})
     )
 
-    df_5_minutely.head().collect()
-    return (df_5_minutely,)
+    df.head().collect()
+    return
 
 
 @app.cell
