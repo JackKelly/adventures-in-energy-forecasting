@@ -1,8 +1,6 @@
-
-
 import marimo
 
-__generated_with = "0.13.2"
+__generated_with = "0.13.4"
 app = marimo.App(width="medium")
 
 
@@ -16,16 +14,16 @@ def _():
 def _(mo):
     mo.md(
         r"""
-        Data sources:
+    Data sources:
 
-        Solar PV power data: https://huggingface.co/datasets/openclimatefix/uk_pv
+    Solar PV power data: https://huggingface.co/datasets/openclimatefix/uk_pv
 
-        To download new metadata from Sheffield Solar, run: 
+    To download new metadata from Sheffield Solar, run: 
 
-        ```bash
-        curl "https://api.pvlive.uk/rawdata/api/v4/owner_system_params_rounded?key=<API_KEY>&user_id=<USER_ID>" > new_metadata.csv
-        ```
-        """
+    ```bash
+    curl "https://api.pvlive.uk/rawdata/api/v4/owner_system_params_rounded?key=<API_KEY>&user_id=<USER_ID>" > new_metadata.csv
+    ```
+    """
     )
     return
 
@@ -44,9 +42,8 @@ def _(PV_DATA_PATH, pl):
     """Lazily open all the Parquet files in the data directory."""
 
     df = (
-        pl.scan_parquet(PV_DATA_PATH / "data" / "*" / "*" / "*30min_sorted.parquet")
+        pl.scan_parquet(PV_DATA_PATH / "30_minutely")
         .select(["ss_id", "datetime_GMT"])
-        .cast({"ss_id": pl.Int32})
     )
 
     df.head().collect()

@@ -1,8 +1,6 @@
-
-
 import marimo
 
-__generated_with = "0.13.2"
+__generated_with = "0.13.4"
 app = marimo.App(width="medium")
 
 
@@ -16,14 +14,14 @@ def _():
 def _(mo):
     mo.md(
         r"""
-        Pivot the monthly "tall and long" Parquet data to a single "very wide" tables, where each SS_ID is a column.
+    Pivot the monthly "tall and long" Parquet data to a single "very wide" tables, where each SS_ID is a column.
 
-        This code takes about 12 minutes to run on an 8-core machine.
+    This code takes about 12 minutes to run on an 8-core machine.
 
-        Data sources:
+    Data sources:
 
-        - Solar PV power data: https://huggingface.co/datasets/openclimatefix/uk_pv/tree/main
-        """
+    - Solar PV power data: https://huggingface.co/datasets/openclimatefix/uk_pv/tree/main
+    """
     )
     return
 
@@ -50,8 +48,7 @@ def _(PV_DATA_PATH, pl):
 @app.cell
 def _(SRC_FILENAMES, pl):
     """Polars pivot only works in eager mode. And Polars tries to use more RAM than is available
-    when trying to pivot more than a few months of data.
-    So we need to pivot chunk-by-chunk. Which is what this function implements!
+    when trying to pivot more than a few months of data. So we need to pivot file-by-file.
     """
 
     for filename in SRC_FILENAMES:

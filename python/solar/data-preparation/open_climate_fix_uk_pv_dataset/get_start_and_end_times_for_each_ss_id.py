@@ -1,8 +1,6 @@
-
-
 import marimo
 
-__generated_with = "0.13.2"
+__generated_with = "0.13.4"
 app = marimo.App(width="medium")
 
 
@@ -53,7 +51,7 @@ def _(PV_DATA_PATH, pl, ss_ids):
 
 @app.cell
 def _(df, itertools, ss_ids):
-    """Select _batches_ of columns at once. In testing, this approach is far faster than selecting one columns at a time. We can't load _everything_ at once or Polars will quickly try to use more RAM than is available (on a 32GB machine). This takes about 2 hour and 40 minutes."""
+    """Select _batches_ of columns at once. In testing, this approach is far faster than selecting one column at a time. We can't load _everything_ at once or Polars will quickly try to use more RAM than is available (on a 32GB machine). This takes about 2 hour and 40 minutes."""
 
     start_and_end_dates = []
     _BATCH_SIZE = 256

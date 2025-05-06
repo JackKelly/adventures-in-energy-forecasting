@@ -1,8 +1,6 @@
-
-
 import marimo
 
-__generated_with = "0.13.2"
+__generated_with = "0.13.4"
 app = marimo.App(width="medium")
 
 
@@ -16,12 +14,12 @@ def _():
 def _(mo):
     mo.md(
         r"""
-        The latest data from Sheffield Solar is shaped such that each half hour is a column. This script re-shapes this to the "tall and thin" format. The old source files are renamed to have the suffix ".hh_as_columns.pq", and the new "tall and thin" files replace the old filenames.
+    The latest data from Sheffield Solar is shaped such that each half hour is a column. This script re-shapes this to the "tall and thin" format.
 
-        Data sources:
+    Data sources:
 
-        - Solar PV power data: https://huggingface.co/datasets/openclimatefix/uk_pv/tree/main
-        """
+    - Solar PV power data: https://huggingface.co/datasets/openclimatefix/uk_pv/tree/main
+    """
     )
     return
 
@@ -33,20 +31,25 @@ def _():
     import polars.selectors as cs
 
     PV_DATA_PATH = pathlib.Path("~/data/uk_pv/").expanduser()
-    return PV_DATA_PATH, cs, pl
+
+    SRC_FILENAMES = [
+        PV_DATA_PATH / "30_minutely.parquet" / "year=2025" / "month=03",
+    ]
+
+    SRC_FILENAMES
+    return SRC_FILENAMES, cs, pl
 
 
 @app.cell
-def _(PV_DATA_PATH, cs, pl):
-    SRC_FILENAMES = [
-        PV_DATA_PATH / "data" / "2024" / "12" / "202412_30min.parquet",
-        PV_DATA_PATH / "data" / "2025" / "01" / "202501_30min.parquet",
-        PV_DATA_PATH / "data" / "2025" / "02" / "202502_30min.parquet",
-    ]
+def _(SRC_FILENAMES, pl):
+    pl.scan_parquet(SRC_FILENAMES[0]).head().collect()
+    return
 
+
+@app.cell
+def _(SRC_FILENAMES, cs, pl):
     for src_filename in SRC_FILENAMES:
         print(src_filename)
-        dst_filename = src_filename.with_name(src_filename.name.replace(".parquet", ".tall.parquet"))
         (
             pl.scan_parquet(src_filename)
             .unpivot(
@@ -58,21 +61,17 @@ def _(PV_DATA_PATH, cs, pl):
             .with_columns(pl.col("hh").str.replace("t", "").cast(pl.Int32).mul(30))
             .with_columns(pl.col("datetime_GMT").dt.offset_by(pl.format("{}m", pl.col("hh"))))
             .drop("hh")
+            .cast({"ss_id": pl.Int32, "generation_Wh": pl.Float32})
             # The wide data from SS contains some duplicates. Delete those dupes:
             .unique(subset=["datetime_GMT", "ss_id"])
             # Sort and save:
-            .sort(["datetime_GMT", "ss_id"])
-            .sink_parquet(dst_filename)
+            .sort(["ss_id", "datetime_GMT"])
+            # Re-order columns:
+            .select(["ss_id", "datetime_GMT", "generation_Wh"])
+            .sink_parquet(src_filename)
         )
 
-        # Rename
-        src_filename.rename(
-            src_filename.with_name(src_filename.name.replace(".parquet", ".hh_as_columns.pq"))
-        )
-        dst_filename.rename(
-            dst_filename.with_name(dst_filename.name.replace(".tall.parquet", ".parquet"))
-        )
-    return (SRC_FILENAMES,)
+    return
 
 
 @app.cell
