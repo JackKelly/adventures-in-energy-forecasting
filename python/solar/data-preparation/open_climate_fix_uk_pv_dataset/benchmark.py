@@ -46,7 +46,10 @@ def _():
     """Lazily open all the Parquet files in the data directory."""
 
     df = pl.scan_parquet(
-        PV_DATA_PATH / "30_minutely", hive_schema={"year": pl.Int16, "month": pl.Int8}
+        PV_DATA_PATH / "30_minutely",
+        hive_schema={"year": pl.Int16, "month": pl.Int8},
+        # "hf://datasets/openclimatefix/uk_pv/30_minutely",
+        # hive_partitioning=True,
     )
     df.head().collect()
     return PV_DATA_PATH, datetime, df, pl, random, subprocess, time
@@ -137,12 +140,11 @@ def _(
             )
             random_end_dt = random_start_dt + DURATION_OF_EACH_SAMPLE
             sample = df_for_ss_id.filter(
-                # Filter explicitly to select the Hive partitions we need.
-                # This reduces runtime to about a third of the runtime without this filtration by the Hive partition.
-                pl.datetime(pl.col("year"), pl.col("month"), day=1, time_zone="UTC").is_between(
-                    random_start_dt, random_end_dt
+                # Select the Hive partitions for this sample (which doubles performance!)
+                pl.date(pl.col("year"), pl.col("month"), day=1).is_between(
+                    random_start_dt.date().replace(day=1), random_end_dt.date().replace(day=1)
                 ),
-                # Select the precise date range we need:
+                # Select the precise date range for this sample:
                 pl.col("datetime_GMT").is_between(random_start_dt, random_end_dt),
             )
             samples.append(sample.collect())
@@ -157,7 +159,7 @@ def _(
 def _(samples):
     import altair as alt
 
-    _sample = samples[0]
+    _sample = samples[8]
 
     (
         alt.Chart(_sample)
