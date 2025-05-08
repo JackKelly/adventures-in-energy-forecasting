@@ -85,7 +85,7 @@ def _(df, max_dt_of_timeseries, min_dt_of_timeseries, pathlib, pl, timedelta):
             .sort(by=["ss_id", "datetime_GMT"])
             .collect()
         )
-        newly_partitioned.write_parquet(output_path / "data.parquet")
+        newly_partitioned.write_parquet(output_path / "data.parquet", statistics="full")
     return
 
 
