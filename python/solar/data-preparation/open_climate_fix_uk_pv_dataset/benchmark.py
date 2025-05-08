@@ -159,7 +159,7 @@ def _(
 def _(samples):
     import altair as alt
 
-    _sample = samples[8]
+    _sample = samples[24]
 
     (
         alt.Chart(_sample)

@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.13.4"
+__generated_with = "0.13.6"
 app = marimo.App(width="medium")
 
 
@@ -41,10 +41,7 @@ def _():
 def _(PV_DATA_PATH, pl):
     """Lazily open all the Parquet files in the data directory."""
 
-    df = (
-        pl.scan_parquet(PV_DATA_PATH / "30_minutely")
-        .select(["ss_id", "datetime_GMT"])
-    )
+    df = pl.scan_parquet(PV_DATA_PATH / "30_minutely").select(["ss_id", "datetime_GMT"])
 
     df.head().collect()
     return (df,)
@@ -57,7 +54,7 @@ def _(df):
 
 
 @app.cell
-def _(N_ROWS_PER_CHUNK, df):
+def _(df):
     """Get unique Sheffield Solar IDs from the Parquet data."""
 
     ss_ids = set([])
@@ -67,13 +64,13 @@ def _(N_ROWS_PER_CHUNK, df):
         _ss_ids_for_chunk := df.select("ss_id").slice(_offset, _N_ROWS_PER_CHUNK).unique().collect()
     ).height > 0:
         ss_ids.update(_ss_ids_for_chunk["ss_id"].to_list())
-        _offset += N_ROWS_PER_CHUNK
+        _offset += _N_ROWS_PER_CHUNK
     return (ss_ids,)
 
 
 @app.cell
 def _(ss_ids):
-    len(ss_ids)  # 30756
+    len(ss_ids)  # 30757
     return
 
 
@@ -111,12 +108,52 @@ def _(new_metadata, pl, ss_ids):
     )
 
     filtered
+    return (filtered,)
+
+
+@app.cell
+def _(PV_DATA_PATH, pl):
+    old_metadata = pl.read_csv(PV_DATA_PATH / "metadata.csv")
+    old_metadata
+    return (old_metadata,)
+
+
+@app.cell
+def _(filtered, old_metadata):
+    """Join with the existing metadata to get the start and end datetimes."""
+
+    joined = (
+        filtered.join(
+            old_metadata.select(["ss_id", "start_datetime_GMT", "end_datetime_GMT"]),
+            on="ss_id",
+            how="left",
+        )
+        .select(  # Order the columns
+            [
+                "ss_id",
+                "start_datetime_GMT",
+                "end_datetime_GMT",
+                "latitude_rounded",
+                "longitude_rounded",
+                "orientation",
+                "tilt",
+                "kWp",
+            ]
+        )
+        .sort(by="ss_id")
+    )
+    joined
+    return (joined,)
+
+
+@app.cell
+def _(PV_DATA_PATH, joined):
+    joined.write_csv(PV_DATA_PATH / "metadata.csv")
     return
 
 
 @app.cell
 def _():
-    # filtered.write_csv(PV_DATA_PATH / "metadata.csv")
     return
 
 

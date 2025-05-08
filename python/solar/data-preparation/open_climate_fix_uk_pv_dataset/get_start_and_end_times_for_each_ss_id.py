@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.13.4"
+__generated_with = "0.13.6"
 app = marimo.App(width="medium")
 
 
@@ -23,72 +23,90 @@ def _():
     import itertools
 
     PV_DATA_PATH = pathlib.Path("~/data/uk_pv/").expanduser()
-    return PV_DATA_PATH, itertools, pl
+    return PV_DATA_PATH, pl
 
 
 @app.cell
 def _(PV_DATA_PATH, pl):
-    """Load the metadata. We need a list of SS_IDs so we can tell `scan_parquet` the schema."""
-
-    metadata = pl.read_csv(PV_DATA_PATH / "metadata.csv")
+    metadata = pl.read_csv(PV_DATA_PATH / "metadata.csv", try_parse_dates=True)
     ss_ids = metadata["ss_id"].to_list()
-    return metadata, ss_ids
+    ss_ids.sort()
+    ss_ids
+    return (metadata,)
 
 
 @app.cell
-def _(PV_DATA_PATH, pl, ss_ids):
-    """Lazily open the parquet files. We need to specify the schema so that we can use `scan_parquet` with the wide tables (where each SS_ID is a column), even though each month might have a different set of columns (SS_IDs)."""
+def _(PV_DATA_PATH, pl):
+    """Lazily open the parquet files."""
 
-    schema = {"datetime_GMT": pl.Datetime("ns", "UTC")}
-    schema.update({f"{ss_id}": pl.Float32 for ss_id in ss_ids})
-    df = pl.scan_parquet(
-        PV_DATA_PATH / "data/*/*/*_30min.pivoted.parquet",
-        allow_missing_columns=True,
-        schema=schema,
-    )
+    df = pl.read_parquet(
+        PV_DATA_PATH / "30_minutely/year=2025/month=03",
+    ).select(["ss_id", "datetime_GMT"])
+
+    df.head()
     return (df,)
 
 
 @app.cell
-def _(df, itertools, ss_ids):
-    """Select _batches_ of columns at once. In testing, this approach is far faster than selecting one column at a time. We can't load _everything_ at once or Polars will quickly try to use more RAM than is available (on a 32GB machine). This takes about 2 hour and 40 minutes."""
-
-    start_and_end_dates = []
-    _BATCH_SIZE = 256
-
-    for i, ss_id_batch in enumerate(itertools.batched(ss_ids, _BATCH_SIZE)):
-        print(
-            f"\rProcessing batch of SS_IDs from number {i * _BATCH_SIZE:5,d} to {(i + 1) * _BATCH_SIZE:5,d}."
-            " Total SS_IDs = {len(ss_ids):,d}",
-            end="",
+def _(df, pl):
+    new_start_and_ends = (
+        df.group_by("ss_id")
+        .agg(
+            start_datetime_GMT=pl.col("datetime_GMT").min(),
+            end_datetime_GMT=pl.col("datetime_GMT").max(),
         )
-        cols = ["datetime_GMT"] + list(map(str, ss_id_batch))
-        batch_df = df.select(cols).collect()
-        for ss_id in ss_id_batch:
-            datetimes = batch_df.drop_nans(f"{ss_id}")["datetime_GMT"]
-            start_and_end_dates.append(
-                {
-                    "ss_id": ss_id,
-                    "start_datetime_GMT": datetimes.first(),
-                    "end_datetime_GMT": datetimes.last(),
-                }
-            )
-    return (start_and_end_dates,)
-
-
-@app.cell
-def _(PV_DATA_PATH, metadata, pl, start_and_end_dates):
-    """Save as 'metadata_with_dates.csv'. So you can check the CSV before overwriting 'metadata.csv'."""
-
-    pl.from_dicts(start_and_end_dates).join(metadata, on="ss_id").write_csv(
-        PV_DATA_PATH / "metadata_with_dates.csv", datetime_format="%Y-%m-%dT%H:%M:%SZ"
+        .sort(by="ss_id")
     )
-    return
+
+    new_start_and_ends
+    return (new_start_and_ends,)
 
 
 @app.cell
-def _(PV_DATA_PATH, pl):
-    pl.read_csv(PV_DATA_PATH / "metadata_with_dates.csv")
+def _(metadata, new_start_and_ends):
+    joined = metadata.join(new_start_and_ends, on="ss_id", how="left")
+    joined
+    return (joined,)
+
+
+@app.cell
+def _(joined, pl):
+    updated_metadata = (
+        joined.with_columns(
+            pl.when(pl.col("start_datetime_GMT").is_null())
+            .then(pl.col("start_datetime_GMT_right"))
+            .otherwise(pl.col("start_datetime_GMT"))
+            .alias("start_datetime_GMT"),
+            pl.when(
+                pl.col("end_datetime_GMT").is_null()
+                | (pl.col("end_datetime_GMT") < pl.col("end_datetime_GMT_right"))
+            )
+            .then(pl.col("end_datetime_GMT_right"))
+            .otherwise(pl.col("end_datetime_GMT"))
+            .alias("end_datetime_GMT"),
+        )
+        .select(  # Order the columns
+            [
+                "ss_id",
+                "start_datetime_GMT",
+                "end_datetime_GMT",
+                "latitude_rounded",
+                "longitude_rounded",
+                "orientation",
+                "tilt",
+                "kWp",
+            ]
+        )
+        .sort(by="ss_id")
+    )
+
+    updated_metadata  # .filter(pl.col.ss_id == 191985)
+    return (updated_metadata,)
+
+
+@app.cell
+def _(PV_DATA_PATH, updated_metadata):
+    updated_metadata.write_csv(PV_DATA_PATH / "metadata.csv", datetime_format="%Y-%m-%dT%H:%M:%SZ")
     return
 
 
