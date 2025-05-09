@@ -53,10 +53,5 @@ def _(OUTPUT_PATH, date, df, pl):
     return
 
 
-@app.cell
-def _():
-    return
-
-
 if __name__ == "__main__":
     app.run()
