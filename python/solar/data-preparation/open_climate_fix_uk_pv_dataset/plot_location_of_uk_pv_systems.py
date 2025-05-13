@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.13.7"
+__generated_with = "0.13.6"
 app = marimo.App(width="full")
 
 
@@ -10,6 +10,7 @@ def _():
     import polars as pl
     import polars_h3 as plh3
     import numpy as np
+    import branca.colormap as cmp
     return np, pl, plh3
 
 
@@ -32,8 +33,39 @@ def _(metadata):
 
 
 @app.cell
+def _():
+    """I tried adding a colorbar. It 'works'. But the scale seems totally wrong to me. So I'm not including it."""
+
+    # from matplotlib import colormaps as cm
+    # colormap = cm.get_cmap("plasma")
+    return
+
+
+@app.cell
+def _(colormap):
+    colormap
+    return
+
+
+@app.cell
 def _(metadata_to_plot, plh3):
-    plh3.graphing.plot_hex_fills(metadata_to_plot, "h3", "len", map_size="large")
+    map = plh3.graphing.plot_hex_fills(metadata_to_plot, "h3", "len", map_size="large")
+    # colorbar = cmp.LinearColormap(
+    #    colors=[colormap(i) for i in range(0, 256, 10)], vmin=0, vmax=metadata_to_plot["len"].max()
+    # )
+    # colorbar.to_step(n=10, method="log").add_to(map)
+    map
+    return
+
+
+@app.cell
+def _(colorbar):
+    colorbar.to_step(n=10, method="log")
+    return
+
+
+@app.cell
+def _():
     return
 
 
